@@ -1,0 +1,291 @@
+---
+title: "When Numbers Speak: Population, Prosperity, and School Hygiene"
+author: Yash Sanjay Jadhav
+format: html
+editor: visual
+date: "`r Sys.Date()`"
+---
+
+## Introduction
+
+**Harnessing Data to Illuminate the Path Forward in Global Education Hygiene**
+
+In the quest to cultivate thriving, educated communities, the importance of fundamental hygiene within educational institutions cannot be overstressed. School hygiene plays a pivotal role not just in safeguarding health but also in enhancing academic attendance and performance. By examining data spanning over two decades, we uncover the intricate tapestry of progress, challenges, and opportunities that lay before us on a global scale.
+
+**1) School Cleanliness from Place to Place**
+
+```{r world-map-chart, warning=FALSE, message=FALSE, fig.show='hold'}
+#| echo: false
+install.packages("tidyverse")
+
+library(tidyverse)
+unicef_metadata <- read_csv("unicef_metadata.csv")
+unicef_indicator_1 <- read_csv("unicef_indicator_1.csv")
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+
+# Read the data
+data <- read_csv("unicef_indicator_1.csv")
+
+# Select necessary columns
+# Assuming the first column is 'country' and the seventh column is 'obs_value'
+data <- data %>%
+  select(country = 1, obs_value = 7)
+
+# Average the observation values if there are multiple observations per country
+data <- data %>%
+  group_by(country) %>%
+  summarise(obs_value = mean(obs_value, na.rm = TRUE))
+
+# Load world map
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Merge the world map with your data
+world_map <- world %>%
+  left_join(data, by = c("name" = "country"))
+
+# Plot the map
+ggplot(data = world_map) +
+  geom_sf(aes(fill = obs_value), color = "white", size = 0.2) +
+  scale_fill_continuous(name = "Hygiene Observation Value") +
+  labs(title = "World Map of School Hygiene Observation Values",
+       caption = "Data source: UNICEF") +
+  theme_void() +  # Minimize non-data ink
+  theme(legend.position = "bottom", plot.margin = margin(0, 0, 0, 0)) +
+  guides(fill = guide_legend(keywidth = 0.5, keyheight = 0.5))
+
+# Save the plot
+ggsave("SchoolHygieneMap.png", width = 10, height = 5,  units = "in")
+```
+
+The 2005 world map presents a stark visual contrast between the varying standards of school hygiene across continents. Nations in darker hues, predominantly in the developed world, showcase commendable hygiene levels, setting benchmarks for others. Conversely, the lighter shades across numerous regions unveil a distressing gap, calling for an intensified global focus on hygiene in schools.
+
+**2)The Link Between Wealth and Hygiene**
+```{r Bar Chart: Progress and Prosperity, warning=FALSE, message=FALSE}
+#| echo: false
+
+
+library(tidyverse)
+
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(scales)  # For more detailed control over the secondary axis
+
+# Read the data
+indicator_data <- read_csv("unicef_indicator_1.csv")
+metadata <- read_csv("unicef_metadata.csv")
+
+# Prepare the indicator data
+indicator_by_year <- indicator_data %>%
+  rename(year = time_period) %>%  # Rename 'time_period' to 'year'
+  select(year = 6, obs_value = 7) %>%
+  filter(year >= 2007, year <= 2021) %>%
+  group_by(year) %>%
+  summarise(avg_hygiene = mean(obs_value, na.rm = TRUE))
+
+# Prepare the metadata
+gdp_by_year <- metadata %>%
+  select(year = 5, gdp_per_capita = 7) %>%
+  filter(year >= 2007, year <= 2021) %>%
+  group_by(year) %>%
+  summarise(avg_gdp = mean(gdp_per_capita, na.rm = TRUE))
+
+# Combine the datasets
+combined_data <- left_join(indicator_by_year, gdp_by_year, by = "year")
+
+gg <- ggplot(combined_data, aes(x = year)) +
+  geom_col(aes(y = avg_hygiene), fill = "light Blue") +
+  geom_line(aes(y = avg_gdp / max(combined_data$avg_gdp) * max(combined_data$avg_hygiene), group = 1), color = "red", size = 1) +
+  scale_y_continuous(
+    "Avg. Proportion of schools with basic hygiene services",
+    sec.axis = sec_axis(~ . / max(combined_data$avg_hygiene) * max(combined_data$avg_gdp), 
+                        name = "Avg GDP per capita (constant 2015 US$)",
+                        labels = scales::comma)
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Progress and Prosperity:School Hygiene and Economic Growth (2007-2021)",
+    x = "Year",
+    y = "Avg. Proportion of schools with basic hygiene services"
+  )
+# Print the plot
+print(gg)
+
+# Save the plot to a file
+ggsave("hygiene_gdp_growth.png", gg, width = 12, height = 5)
+```
+
+The chart reveals that while the average GDP per capita has seen a steady increase, the average proportion of schools with basic hygiene services started at a high of around 85% in 2007, but notably declined by 2015 and has since plateaued. This suggests that economic growth has not directly translated to sustained improvements in school hygiene, indicating a potential gap in policy or investment focus on maintaining and enhancing hygiene standards in educational settings.
+
+**3)Health and Hygiene Go Hand in Hand**
+
+```{r Scatter Plot: The Intersection of Health and Environment, warning=FALSE, message=FALSE}
+#| echo: false
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(ggrepel)  # For better label placement to avoid overlaps
+
+# Load the data
+indicator_data <- read_csv("unicef_indicator_1.csv")
+metadata <- read_csv("unicef_metadata.csv")
+
+# Filter the indicator data for the year 2021 and select the necessary columns
+hygiene_data <- indicator_data %>%
+  filter(time_period == 2021) %>%
+  select(country = 1, avg_hygiene = 7)
+
+# Filter the metadata for the year 2021, select life expectancy and population
+life_expectancy_data <- metadata %>%
+  filter(year == 2021) %>%
+  select(country = 1, life_expectancy = 10, population = 6)
+
+# Join the two data frames
+combined_data <- left_join(hygiene_data, life_expectancy_data, by = "country")
+
+# Select the top 10 most populated countries
+top_10_data <- combined_data %>%
+  arrange(desc(population)) %>%
+  slice_head(n = 10)
+
+# Create a factor for colors based on countries to have different colors
+top_10_data$country <- factor(top_10_data$country, levels = top_10_data$country)
+
+# Create the scatter plot
+gg <- ggplot(top_10_data, aes(x = avg_hygiene, y = life_expectancy, size = population, color = country)) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(aes(label = country), size = 5) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", size = 1) +
+  scale_size(range = c(3, 10)) +
+  scale_color_discrete(guide = FALSE) +  # Disable the legend for color
+  labs(
+    title = "Life Expectancy and School Hygiene",
+    x = "Avg. Proportion of Schools with Basic Hygiene Services",
+    y = "Avg Life Expectancy at Birth (Years)"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(gg)
+
+# Save the plot to a file
+ggsave("life_expectancy_hygiene_scatter.png", gg, width = 12, height = 5)
+
+
+```
+
+The scatterplot shows that countries like Ethiopia, with lower school hygiene levels around 20%, have an average life expectancy of 60 years, whereas the USA, with higher hygiene standards, sees life expectancy close to 80 years. This visual data underscores the link between hygiene in schools and overall life expectancy.
+
+**4)Economic Growth and Its Impact on Schools**
+
+```{r Time Series Chart: Economic Growth and Its Implications, warning=FALSE, message=FALSE}
+#| echo: false
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+
+
+# Load the GDP data
+metadata <- read_csv("unicef_metadata.csv", col_types = cols(
+  country = col_character(),
+  `GDP per capita (constant 2015 US$)` = col_double()
+))
+
+# Define the countries to include
+countries <- c("United States", "Germany", "France", "Italy", "Thailand", "Egypt", "India", "Philippines", "Bangladesh")
+
+# Filter the data for the desired countries and time period
+gdp_data_filtered <- metadata %>%
+  filter(
+    country %in% countries,
+    year >= 2000,
+    year <= 2022
+  ) %>%
+  select(country, year, `GDP per capita (constant 2015 US$)`)
+
+# Now plot the time series chart
+ggplot(gdp_data_filtered, aes(x = year, y = `GDP per capita (constant 2015 US$)`, color = country)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Time Series of GDP per Capita for Selected Countries (2000-2022)",
+    x = "Year",
+    y = "Average GDP per Capita (constant 2015 US$)",
+    color = "Country"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+
+# Save the plot to a file
+ggsave("gdp_time_series_selected_countries.png", width = 12, height = 5)
+
+```
+
+The time series chart displays the GDP per capita from 2000 to 2022 for selected countries. The United States stands out with a much higher GDP per capita, showing substantial growth over time. In contrast, countries like Bangladesh, India, and the Philippines demonstrate much lower GDP per capita levels with modest upward trends. The data highlights the vast economic disparities between countries and underscores the continuous economic growth in the USA.
+
+**5)The Present and Beyond**
+
+```{r world-map-chart-2022, warning=FALSE, message=FALSE}
+#| echo: false
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+
+# Read the data
+indicator_data <- read_csv("unicef_indicator_1.csv")
+metadata <- read_csv("unicef_metadata.csv")
+
+# Filter and join the datasets on 'country' for the year 2022
+# Make sure to adjust the column numbers if different in your actual datasets
+data_2022 <- indicator_data %>%
+  select(country = 1, obs_value = 7) %>%
+  inner_join(metadata %>% select(country = 1, year = 5), by = "country") %>%
+  filter(year == 2022) %>%
+  group_by(country) %>%
+  summarise(obs_value = mean(obs_value, na.rm = TRUE))
+
+# Load world map
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Merge the world map with your 2022 data
+world_map_2022 <- world %>%
+  left_join(data_2022, by = c("name" = "country"))
+
+# Plot the map for 2022
+ggplot(data = world_map_2022) +
+  geom_sf(aes(fill = obs_value), color = "white", size = 0.2) +
+  scale_fill_viridis_c(
+    name = "Hygiene Observation Value", 
+    na.value = "grey50",  # This will color countries with NA values in grey
+    limits = c(NA, NA)   # This sets the scale based on the range of the data
+  ) +
+  labs(title = "World Map of School Hygiene Observation Values for the Year 2022",
+       caption = "Data source: UNICEF") +
+  theme_void() +  # Minimize non-data ink
+  theme(legend.position = "bottom", plot.margin = margin(0, 0, 0, 0)) +
+  guides(fill = guide_legend(keywidth = 0.5, keyheight = 0.5))
+
+# Save the plot
+ggsave("SchoolHygieneMap_2022.png", width = 10, height = 5,  units = "in")
+
+```
+
+The 2022 world map visualizes the status of school hygiene, with varied colors reflecting the hygiene observation values reported by UNICEF. We see a spectrum of hygiene standards globally: regions with darker colors, such as in South America and some parts of Europe and Asia, indicate robust hygiene practices. Meanwhile, areas with lighter colors may signify regions where school hygiene needs more attention and resources. This map underscores the current global scenario, highlighting progress in certain areas while emphasizing the need for improvement in others as of 2022.
+
+## Conculsion 
+
+These data visualizations reveal insightful patterns in the data. Economic growth doesn't consistently equate to better school hygiene, suggesting other factors at play in educational investments. A clear positive correlation between school hygiene and life expectancy emphasizes the impact of education environments on public health. The persisting hygiene disparities in 2022 indicate a need for focused improvements in school facilities worldwide.
+
